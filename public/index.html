@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Портал государственных услуг</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:#f5f7fa;color:#222}
+nav{background:#0d47a1;color:#fff;padding:12px 20px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+nav a,nav button{color:#fff;text-decoration:none;padding:6px 12px;background:transparent;border:none;cursor:pointer;font-size:14px;border-radius:6px}
+nav a:hover,nav button:hover{background:rgba(255,255,255,.15)}
+nav .brand{font-weight:700;font-size:18px;margin-right:20px}
+nav .spacer{flex:1}
+main{max-width:1100px;margin:24px auto;padding:0 16px}
+.card{background:#fff;padding:20px;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:16px}
+h1{font-size:24px;margin-bottom:16px}
+button.primary{background:#0d47a1;color:#fff;border:none;padding:10px 18px;border-radius:6px;cursor:pointer;font-size:14px}
+button.primary:hover{background:#083378}
+button.danger{background:#c62828;color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer}
+button.secondary{background:transparent;border:1px solid #0d47a1;color:#0d47a1;padding:6px 12px;border-radius:6px;cursor:pointer}
+input,select,textarea{width:100%;padding:10px;border:1px solid #ccc;border-radius:6px;font-size:14px;font-family:inherit}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#0d47a1}
+label{display:block;margin-bottom:6px;font-size:14px;color:#555}
+.form-group{margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.service-card{background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.06);cursor:pointer;transition:transform .1s}
+.service-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.1)}
+.service-card h3{font-size:16px;margin-bottom:8px;color:#0d47a1}
+.service-card p{font-size:13px;color:#666;margin-bottom:8px}
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;background:#e3f2fd;color:#0d47a1;margin-right:4px;margin-bottom:8px}
+.badge.success{background:#e8f5e9;color:#2e7d32}
+.badge.warning{background:#fff3e0;color:#ef6c00}
+.badge.error{background:#ffebee;color:#c62828}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden}
+th,td{padding:12px;text-align:left;border-bottom:1px solid #eee;font-size:14px}
+th{background:#f5f7fa;font-weight:600}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.error-msg{background:#ffebee;color:#c62828;padding:10px;border-radius:6px;margin-bottom:12px;font-size:14px}
+.notif{padding:12px;border-left:3px solid #0d47a1;background:#f5f7fa;margin-bottom:8px;border-radius:4px}
+.notif.unread{background:#e3f2fd}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px}
+.modal{background:#fff;padding:24px;border-radius:10px;max-width:500px;width:100%;max-height:90vh;overflow-y:auto}
+.tabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid #ddd}
+.tabs button{padding:8px 16px;border:none;background:transparent;cursor:pointer;border-bottom:2px solid transparent;font-size:14px}
+.tabs button.active{border-color:#0d47a1;color:#0d47a1;font-weight:600}
+</style>
+</head>
+<body>
+<nav id="nav"></nav>
+<main id="app"></main>
+<script>
+const $ = (s) => document.querySelector(s);
+const API = '/api';
+let token = localStorage.getItem('token');
+let user = JSON.parse(localStorage.getItem('user') || 'null');
+
+async function api(path, opts = {}) {
+  const headers = opts.headers || {};
+  if (token) headers.Authorization = 'Bearer ' + token;
+  if (opts.body && !(opts.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(opts.body);
+  }
+  const res = await fetch(API + path, { ...opts, headers });
+  let data = {};
+  try { data = await res.json(); } catch {}
+  if (!res.ok) throw new Error(data.message || 'Ошибка ' + res.status);
+  return data;
+}
+function saveAuth(t, u) {
+  token = t; user = u;
+  localStorage.setItem('token', t);
+  localStorage.setItem('user', JSON.stringify(u));
+  renderNav();
+}
+function logout() {
+  token = null; user = null;
+  localStorage.removeItem('token'); localStorage.removeItem('user');
+  location.hash = '#/'; renderNav();
+}
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderNav() {
+  const r = user?.role;
+  $('#nav').innerHTML = `
+    <a class="brand" href="#/">🏛️ Госуслуги</a>
+    <a href="#/catalog">Каталог</a>
+    ${user ? '<a href="#/cabinet">Кабинет</a>' : ''}
+    ${(r === 'employee' || r === 'admin') ? '<a href="#/employee">Заявления</a>' : ''}
+    ${r === 'admin' ? '<a href="#/admin">Админка</a>' : ''}
+    <div class="spacer"></div>
+    ${user ? `<span style="font-size:13px;opacity:.85">${esc(user.email)}</span><button onclick="logout()">Выйти</button>`
+          : '<a href="#/login">Вход</a><a href="#/register">Регистрация</a>'}
+  `;
+}
+
+const routes = {};
+const route = (p, h) => routes[p] = h;
+function router() {
+  const hash = location.hash.slice(1) || '/';
+  const parts = hash.split('/').filter(Boolean);
+  const path = '/' + (parts[0] || '');
+  (routes[path] || routes['/'])(parts.slice(1));
+}
+window.addEventListener('hashchange', router);
+
+route('/', () => {
+  $('#app').innerHTML = `
+    <div class="card" style="background:linear-gradient(135deg,#0d47a1,#1565c0);color:#fff;padding:40px">
+      <h1 style="font-size:28px">Портал государственных услуг</h1>
+      <p style="margin:12px 0 20px;opacity:.9">Получайте услуги в электронном виде — быстро и удобно</p>
+      <a href="#/catalog" style="background:#fff;color:#0d47a1;text-decoration:none;padding:10px 18px;border-radius:6px;display:inline-block;font-weight:600">Каталог услуг</a>
+    </div>
+    <div class="grid">
+      <div class="card"><h3>1. Выберите услугу</h3><p>Найдите нужное в каталоге</p></div>
+      <div class="card"><h3>2. Подайте заявление</h3><p>Заполните форму, приложите документы</p></div>
+      <div class="card"><h3>3. Отслеживайте статус</h3><p>Следите в личном кабинете</p></div>
+    </div>`;
+});
+
+route('/login', () => {
+  $('#app').innerHTML = `
+    <div class="card" style="max-width:400px;margin:40px auto">
+      <h1>Вход</h1><div id="err"></div>
+      <form id="f">
+        <div class="form-group"><label>Email</label><input type="email" name="email" required></div>
+        <div class="form-group"><label>Пароль</label><input type="password" name="password" required></div>
+        <button class="primary" style="width:100%">Войти</button>
+      </form>
+      <p style="margin-top:12px;text-align:center;font-size:14px">Нет аккаунта? <a href="#/register">Регистрация</a></p>
+    </div>`;
+  $('#f').onsubmit = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    try {
+      const d = await api('/auth/login', { method: 'POST', body: { email: fd.get('email'), password: fd.get('password') }});
+      saveAuth(d.token, d.user); location.hash = '#/';
+    } catch (err) { $('#err').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`; }
+  };
+});
+
+route('/register', () => {
+  $('#app').innerHTML = `
+    <div class="card" style="max-width:500px;margin:40px auto">
+      <h1>Регистрация</h1><div id="err"></div>
+      <form id="f">
+        <div class="form-group"><label>Фамилия</label><input name="lastName" required></div>
+        <div class="form-group"><label>Имя</label><input name="firstName" required></div>
+        <div class="form-group"><label>Email</label><input type="email" name="email" required></div>
+        <div class="form-group"><label>Пароль (мин. 6)</label><input type="password" name="password" minlength="6" required></div>
+        <button class="primary" style="width:100%">Создать аккаунт</button>
+      </form>
+      <p style="margin-top:12px;text-align:center;font-size:14px">Есть аккаунт? <a href="#/login">Войти</a></p>
+    </div>`;
+  $('#f').onsubmit = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    try {
+      const d = await api('/auth/register', { method: 'POST', body: {
+        email: fd.get('email'), password: fd.get('password'),
+        firstName: fd.get('firstName'), lastName: fd.get('lastName')
+      }});
+      saveAuth(d.token, d.user); location.hash = '#/';
+    } catch (err) { $('#err').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`; }
+  };
+});
+
+route('/catalog', () => {
+  $('#app').innerHTML = `<h1>Каталог услуг</h1>
+    <div class="card"><input id="q" placeholder="Поиск по названию..."></div>
+    <div id="list" class="grid"></div>`;
+  const load = async () => {
+    const q = $('#q').value.trim();
+    try {
+      const data = await api('/services' + (q ? '?q=' + encodeURIComponent(q) : ''));
+      $('#list').innerHTML = data.length ? data.map(s => `
+        <div class="service-card" onclick="location.hash='#/service/${s._id}'">
+          <span class="badge">${esc(s.department)}</span>
+          ${s.category ? `<span class="badge">${esc(s.category)}</span>` : ''}
+          <h3>${esc(s.title)}</h3>
+          <p>${esc((s.description || '').slice(0, 120))}...</p>
+          <strong>${s.cost ? s.cost + ' ₽' : 'Бесплатно'}</strong>
+        </div>`).join('') : '<p>Ничего не найдено</p>';
+    } catch (err) { $('#list').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`; }
+  };
+  let t;
+  $('#q').oninput = () => { clearTimeout(t); t = setTimeout(load, 300); };
+  load();
+});
+
+route('/service', async (p) => {
+  try {
+    const s = await api('/services/' + p[0]);
+    $('#app').innerHTML = `
+      <div class="card">
+        <span class="badge">${esc(s.department)}</span>
+        ${s.category ? `<span class="badge">${esc(s.category)}</span>` : ''}
+        <h1>${esc(s.title)}</h1>
+        <p style="color:#555;margin:16px 0">${esc(s.description || 'Описание отсутствует')}</p>
+        <div class="row" style="margin-bottom:16px">
+          <div><small style="color:#666">Срок</small><br><strong>${esc(s.processingTime || '—')}</strong></div>
+          <div><small style="color:#666">Стоимость</small><br><strong>${s.cost ? s.cost + ' ₽' : 'Бесплатно'}</strong></div>
+        </div>
+        ${s.requiredDocuments?.length ? `<h3>Документы:</h3><ul style="margin:12px 0 20px 20px">${s.requiredDocuments.map(d => `<li>${esc(d)}</li>`).join('')}</ul>` : ''}
+        ${user?.role === 'citizen' ? `<a href="#/apply/${s._id}" class="primary" style="text-decoration:none;display:inline-block;padding:10px 18px;border-radius:6px;">Подать заявление</a>` : ''}
+        <a href="#/catalog" style="margin-left:12px">Назад</a>
+      </div>`;
+  } catch (err) { $('#app').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`; }
+});
+
+route('/apply', (p) => {
+  const serviceId = p[0];
+  $('#app').innerHTML = `
+    <div class="card">
+      <h1>Подача заявления</h1><div id="err"></div>
+      <form id="f">
+        <div class="form-group"><label>ФИО заявителя</label>
+          <input name="applicantName" required value="${esc((user?.profile?.lastName||'') + ' ' + (user?.profile?.firstName||''))}">
+        </div>
+        <div class="form-group"><label>Адрес</label><input name="address" placeholder="г. Краснодар, ул. ..."></div>
+        <div class="form-group"><label>Комментарий</label><textarea name="comment" rows="3"></textarea></div>
+        <div class="form-group"><label>Документы (PDF, DOCX, JPG — до 10 МБ)</label>
+          <input type="file" name="files" multiple accept=".pdf,.docx,.jpg,.jpeg,.png">
+        </div>
+        <button class="primary">Подать заявление</button>
+        <a href="#/service/${serviceId}" style="margin-left:12px">Отмена</a>
+      </form>
+    </div>`;
+  $('#f').onsubmit = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const form = new FormData();
+    form.append('serviceId', serviceId);
+    form.append('formData', JSON.stringify({
+      applicantName: fd.get('applicantName'),
+      address: fd.get('address'),
+      comment: fd.get('comment')
+    }));
+    form.append('submit', 'true');
+    for (const f of fd.getAll('files')) form.append('files', f);
+    try {
+      await api('/applications', { method: 'POST', body: form });
+      location.hash = '#/cabinet';
+    } catch (err) { $('#err').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`; }
+  };
+});
+
+route('/cabinet', () => {
+  if (!user) { location.hash = '#/login'; return; }
+  $('#app').innerHTML = `
+    <h1>Личный кабинет</h1>
+    <div class="card">
+      <h3>${esc(user.profile?.lastName||'')} ${esc(user.profile?.firstName||'')}</h3>
+      <p>${esc(user.email)} · Роль: ${esc(user.role)}</p>
+    </div>
+    <div class="tabs">
+      <button class="active" data-tab="apps">Мои заявления</button>
+      <button data-tab="notif">Уведомления</button>
+    </div>
+    <div id="content"></div>`;
+  const labels = { draft: 'Черновик', submitted: 'Подано', in_review: 'На рассмотрении', approved: 'Одобрено', rejected: 'Отклонено' };
+  const colors = { draft: '', submitted: 'warning', in_review: 'warning', approved: 'success', rejected: 'error' };
+  async function showApps() {
+    document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === 'apps'));
+    try {
+      const apps = await api('/applications/my');
+      $('#content').innerHTML = apps.length ? `
+        <table><thead><tr><th>Услуга</th><th>Статус</th><th>Дата</th><th></th></tr></thead><tbody>
+        ${apps.map(a => `<tr>
+          <td>${esc(a.serviceId?.title || '—')}</td>
+          <td><span class="badge ${colors[a.status]||''}">${labels[a.status]||a.status}</span></td>
+          <td>${new Date(a.createdAt).toLocaleDateString('ru-RU')}</td>
+          <td>${a.status === 'draft' ? `<button class="primary" onclick="submitDraft('${a._id}')">Подать</button>` : ''}</td>
+        </tr>`).join('')}</tbody></table>` : '<div class="card">Заявлений пока нет</div>';
+    } catch (err) { $('#content').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`; }
+  }
+  async function showNotif() {
+    document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === 'notif'));
+    try {
+      const list = await api('/notifications');
+      $('#content').innerHTML = list.length ? list.map(n =>
+        `<div class="notif ${n.isRead ? '' : 'unread'}">${esc(n.message)}<br><small style="color:#888">${new Date(n.createdAt).toLocaleString('ru-RU')}</small></div>`
+      ).join('') : '<div class="card">Уведомлений нет</div>';
+    } catch (err) { $('#content').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`; }
+  }
+  window.submitDraft = async (id) => {
+    try { await api('/applications/' + id + '/submit', { method: 'POST' }); showApps(); }
+    catch (err) { alert(err.message); }
+  };
+  document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => b.dataset.tab === 'apps' ? showApps() : showNotif());
+  showApps();
+});
+
+route('/employee', async () => {
+  if (!user || !['employee','admin'].includes(user.role)) { location.hash = '#/'; return; }
+  $('#app').innerHTML = '<h1>Обработка заявлений</h1><div id="content"></div>';
+  const labels = { draft: 'Черновик', submitted: 'Подано', in_review: 'На рассмотрении', approved: 'Одобрено', rejected: 'Отклонено' };
+  try {
+    const apps = await api('/applications');
+    $('#content').innerHTML = apps.length ? `
+      <table><thead><tr><th>№</th><th>Услуга</th><th>Заявитель</th><th>Статус</th><th>Действия</th></tr></thead><tbody>
+      ${apps.map(a => `<tr>
+        <td>${a._id.slice(-6)}</td>
+        <td>${esc(a.serviceId?.title || '—')}</td>
+        <td>${esc(a.userId?.email || '—')}</td>
+        <td>${labels[a.status]||a.status}</td>
+        <td>${['submitted','in_review'].includes(a.status) ? `
+          <button class="secondary" onclick="setStatus('${a._id}','in_review')">В работу</button>
+          <button class="primary" onclick="setStatus('${a._id}','approved')">Одобрить</button>
+          <button class="danger" onclick="setStatus('${a._id}','rejected')">Отклонить</button>` : ''}
+        </td>
+      </tr>`).join('')}</tbody></table>` : '<div class="card">Заявлений нет</div>';
+  } catch (err) { $('#content').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`; }
+  window.setStatus = async (id, status) => {
+    try { await api('/applications/' + id + '/status', { method: 'PATCH', body: { status } }); router(); }
+    catch (err) { alert(err.message); }
+  };
+});
+
+route('/admin', () => {
+  if (!user || user.role !== 'admin') { location.hash = '#/'; return; }
+  let servicesCache = [];
+  $('#app').innerHTML = `
+    <h1>Админ-панель</h1>
+    <div class="tabs">
+      <button class="active" data-tab="s">Услуги</button>
+      <button data-tab="u">Пользователи</button>
+    </div>
+    <div id="content"></div>`;
+  async function showServices() {
+    document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === 's'));
+    try {
+      servicesCache = await api('/services?sort=-createdAt');
+      $('#content').innerHTML = `
+        <div style="margin-bottom:12px"><button class="primary" onclick="openSvc()">+ Добавить услугу</button></div>
+        <table><thead><tr><th>Название</th><th>Ведомство</th><th>Стоимость</th><th></th></tr></thead><tbody>
+        ${servicesCache.map(s => `<tr>
+          <td>${esc(s.title)}</td>
+          <td>${esc(s.department)}</td>
+          <td>${s.cost ? s.cost + ' ₽' : '—'}</td>
+          <td>
+            <button class="secondary" onclick="openSvc('${s._id}')">Изм.</button>
+            <button class="danger" onclick="delSvc('${s._id}')">Удал.</button>
+          </td>
+        </tr>`).join('')}</tbody></table>`;
+    } catch (err) { $('#content').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`; }
+  }
+  async function showUsers() {
+    document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === 'u'));
+    try {
+      const list = await api('/admin/users');
+      $('#content').innerHTML = `
+        <table><thead><tr><th>Email</th><th>ФИО</th><th>Роль</th></tr></thead><tbody>
+        ${list.map(u => `<tr>
+          <td>${esc(u.email)}</td>
+          <td>${esc((u.profile?.lastName||'') + ' ' + (u.profile?.firstName||''))}</td>
+          <td>
+            <select onchange="setRole('${u._id}',this.value)" style="width:auto">
+              <option value="citizen" ${u.role==='citizen'?'selected':''}>Гражданин</option>
+              <option value="employee" ${u.role==='employee'?'selected':''}>Сотрудник</option>
+              <option value="admin" ${u.role==='admin'?'selected':''}>Админ</option>
+            </select>
+          </td>
+        </tr>`).join('')}</tbody></table>`;
+    } catch (err) { $('#content').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`; }
+  }
+  document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => b.dataset.tab === 's' ? showServices() : showUsers());
+  window.setRole = async (id, role) => {
+    try { await api('/admin/users/' + id + '/role', { method: 'PATCH', body: { role } }); alert('OK'); }
+    catch (err) { alert(err.message); }
+  };
+  window.delSvc = async (id) => {
+    if (!confirm('Удалить услугу?')) return;
+    try { await api('/services/' + id, { method: 'DELETE' }); showServices(); }
+    catch (err) { alert(err.message); }
+  };
+  window.openSvc = (id) => {
+    const s = id ? servicesCache.find(x => x._id === id) : null;
+    const bg = document.createElement('div');
+    bg.className = 'modal-bg';
+    bg.innerHTML = `
+      <div class="modal">
+        <h2 style="margin-bottom:16px">${s ? 'Редактировать' : 'Новая'} услуга</h2>
+        <form id="sf">
+          <div class="form-group"><label>Название</label><input name="title" required value="${esc(s?.title||'')}"></div>
+          <div class="form-group"><label>Ведомство</label><input name="department" required value="${esc(s?.department||'')}"></div>
+          <div class="form-group"><label>Категория</label><input name="category" value="${esc(s?.category||'')}"></div>
+          <div class="form-group"><label>Описание</label><textarea name="description" rows="3">${esc(s?.description||'')}</textarea></div>
+          <div class="form-group"><label>Срок</label><input name="processingTime" value="${esc(s?.processingTime||'')}"></div>
+          <div class="form-group"><label>Стоимость (₽)</label><input type="number" name="cost" value="${s?.cost||0}"></div>
+          <div class="form-group"><label>Документы (через ;)</label><input name="docs" value="${esc((s?.requiredDocuments||[]).join('; '))}"></div>
+          <div class="row">
+            <button type="submit" class="primary">Сохранить</button>
+            <button type="button" class="secondary" onclick="this.closest('.modal-bg').remove()">Отмена</button>
+          </div>
+        </form>
+      </div>`;
+    document.body.appendChild(bg);
+    bg.querySelector('#sf').onsubmit = async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const body = {
+        title: fd.get('title'), department: fd.get('department'),
+        category: fd.get('category'), description: fd.get('description'),
+        processingTime: fd.get('processingTime'), cost: Number(fd.get('cost')),
+        requiredDocuments: String(fd.get('docs')).split(';').map(x => x.trim()).filter(Boolean)
+      };
+      try {
+        if (s) await api('/services/' + s._id, { method: 'PUT', body });
+        else await api('/services', { method: 'POST', body });
+        bg.remove(); showServices();
+      } catch (err) { alert(err.message); }
+    };
+  };
+  showServices();
+});
+
+renderNav();
+router();
+</script>
+</body>
+</html>
